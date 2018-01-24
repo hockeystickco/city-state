@@ -7,7 +7,7 @@ module CS
     @MAXMIND_LOCALE = "en"
     MAXMIND_FILE_NAME = "GeoLite2-City-Locations-"
     @MAXMIND_DB_FN = File.join(FILES_FOLDER, "#{MAXMIND_FILE_NAME}#{@MAXMIND_LOCALE}.csv")
-    COUNTRIES_FN = File.join(FILES_FOLDER, 'countries.yml')
+    @COUNTRIES_FN = File.join(FILES_FOLDER, "countries-#{@MAXMIND_LOCALE}.yml")
 
     @countries, @states, @cities = [{}, {}, {}]
     @current_country = nil # :US, :BR, :GB, :JP, ...
@@ -19,6 +19,7 @@ module CS
         if File.exist? file_to_load
             @MAXMIND_LOCALE = locale
             @MAXMIND_DB_FN = file_to_load
+            @COUNTRIES_FN = File.join(FILES_FOLDER, "countries-#{@MAXMIND_LOCALE}.yml")
         end
         true
     end
@@ -52,7 +53,7 @@ module CS
         end
 
         @countries, @states, @cities = [{}, {}, {}] # invalidades cache
-        File.delete COUNTRIES_FN # force countries.yml to be generated at next call of CS.countries
+        File.delete @COUNTRIES_FN # force countries.yml to be generated at next call of CS.countries
         true
     end
 
@@ -65,8 +66,6 @@ module CS
     CITY = 10
 
     def self.install(country)
-        set_locale(I18n.locale)
-
         # get CSV if doesn't exists
         update_maxmind unless File.exist? @MAXMIND_DB_FN
 
@@ -115,9 +114,11 @@ module CS
         states = Hash[states.sort]
         cities.each { |k, _v| cities[k].sort! }
 
+        country_with_locale = "#{country}-#{@MAXMIND_LOCALE}"
+
         # save to states.us and cities.us
-        states_fn = File.join(FILES_FOLDER, "states.#{country.downcase}")
-        cities_fn = File.join(FILES_FOLDER, "cities.#{country.downcase}")
+        states_fn = File.join(FILES_FOLDER, "states.#{country_with_locale.downcase}")
+        cities_fn = File.join(FILES_FOLDER, "cities.#{country_with_locale.downcase}")
         File.open(states_fn, 'w') { |f| f.write states.to_yaml }
         File.open(cities_fn, 'w') { |f| f.write cities.to_yaml }
         File.chmod(0o666, states_fn, cities_fn) # force permissions to rw_rw_rw_ (issue #3)
@@ -152,54 +153,58 @@ module CS
         self.current_country = country if country.present? # set as current_country
         country = current_country
 
+        country_with_locale = "#{country}-#{@MAXMIND_LOCALE}"
+
         # load the country file
-        if @cities[country].blank?
-            cities_fn = File.join(FILES_FOLDER, "cities.#{country.to_s.downcase}")
+        if @cities[country_with_locale].blank?
+            cities_fn = File.join(FILES_FOLDER, "cities.#{country_with_locale.to_s.downcase}")
             install(country) unless File.exist? cities_fn
-            @cities[country] = YAML.load_file(cities_fn).symbolize_keys
+            @cities[country_with_locale] = YAML.load_file(cities_fn).symbolize_keys
         end
 
-        @cities[country][state.to_s.upcase.to_sym] || []
+        @cities[country_with_locale][state.to_s.upcase.to_sym] || []
     end
 
     def self.states(country)
         self.current_country = country # set as current_country
         country = current_country # normalized
 
+        country_with_locale = "#{country}-#{@MAXMIND_LOCALE}"
+
         # load the country file
-        if @states[country].blank?
-            states_fn = File.join(FILES_FOLDER, "states.#{country.to_s.downcase}")
+        if @states[country_with_locale].blank?
+            states_fn = File.join(FILES_FOLDER, "states.#{country_with_locale.to_s.downcase}")
             install(country) unless File.exist? states_fn
-            @states[country] = YAML.load_file(states_fn).symbolize_keys
+            @states[country_with_locale] = YAML.load_file(states_fn).symbolize_keys
         end
 
-        @states[country] || {}
+        @states[country_with_locale] || {}
     end
 
     # list of all countries of the world (countries.yml)
     def self.countries
-        if !File.exist? COUNTRIES_FN
+        if !File.exist? @COUNTRIES_FN
             # countries.yml doesn't exists, extract from MAXMIND_DB
             update_maxmind unless File.exist? @MAXMIND_DB_FN
 
             # reads CSV line by line
-            File.foreach(@MAXMIND_DB_FN) do |line|
+            lines = File.foreach(@MAXMIND_DB_FN)
+            lines.next # skip the first line, CSV headers
+            lines.each do |line|
                 rec = line.split(',')
                 next if rec[COUNTRY].blank? || rec[COUNTRY_LONG].blank? # jump empty records
                 country = rec[COUNTRY].to_s.upcase.to_sym # normalize to something like :US, :BR
-                if @countries[country].blank?
-                    long = rec[COUNTRY_LONG].delete('"') # sometimes names come with a "\" char
-                    @countries[country] = long
-                end
+                long = rec[COUNTRY_LONG].delete('"') # sometimes names come with a "\" char
+                @countries[country] = long
             end
 
             # sort and save to "countries.yml"
             @countries = Hash[@countries.sort]
-            File.open(COUNTRIES_FN, 'w') { |f| f.write @countries.to_yaml }
-            File.chmod(0o666, COUNTRIES_FN) # force permissions to rw_rw_rw_ (issue #3)
+            File.open(@COUNTRIES_FN, 'w') { |f| f.write @countries.to_yaml }
+            File.chmod(0o666, @COUNTRIES_FN) # force permissions to rw_rw_rw_ (issue #3)
         else
             # countries.yml exists, just read it
-            @countries = YAML.load_file(COUNTRIES_FN).symbolize_keys
+            @countries = YAML.load_file(@COUNTRIES_FN).symbolize_keys
         end
         @countries
     end
