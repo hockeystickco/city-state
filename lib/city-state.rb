@@ -84,7 +84,7 @@ module CS
         File.foreach(@MAXMIND_DB_FN) do |line|
             rec = line.split(',')
             next if rec[COUNTRY] != country
-            next if (rec[STATE].blank? && rec[STATE_LONG].blank?) || rec[CITY].blank?
+            next if (rec[STATE].blank? && rec[STATE_LONG].blank?)
 
             # some state codes are empty: we'll use "states-replace" in these cases
             rec[STATE] = states_replace_inv[rec[STATE_LONG]] if rec[STATE].blank?
@@ -95,16 +95,16 @@ module CS
 
             # normalize
             rec[STATE] = rec[STATE].to_sym
-            rec[CITY].delete!('"') # sometimes names come with a "\" char
-            rec[STATE_LONG].delete!('"') # sometimes names come with a "\" char
+            rec[CITY]&.delete!('"') # sometimes names come with a "\" char
+            rec[STATE_LONG]&.delete!('"') # sometimes names come with a "\" char
 
             # cities list: {TX: ["Texas City", "Another", "Another 2"]}
             cities[rec[STATE]] = [] unless states.key?(rec[STATE])
-            cities[rec[STATE]] << rec[CITY]
+            cities[rec[STATE]] << rec[CITY] if rec[CITY].present?
 
             # states list: {TX: "Texas", CA: "California"}
             unless states.key?(rec[STATE])
-                state = { rec[STATE] => rec[STATE_LONG] }
+                state = { rec[STATE] => rec[STATE_LONG] || rec[STATE].to_s}
                 states.merge!(state)
             end
         end
